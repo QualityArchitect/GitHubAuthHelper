@@ -1,5 +1,3 @@
-# Dockerfile.multistage
-# Build stage - Use Python 3.13 with uv installed
 FROM python:3.13-slim-bookworm AS builder
 
 # Install uv via pip (simpler and more reliable in Docker)
