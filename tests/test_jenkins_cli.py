@@ -5,7 +5,6 @@ from unittest.mock import Mock, patch
 import pytest
 
 
-
 class TestJenkinsCLI:
     """Test cases for Jenkins CLI script."""
 

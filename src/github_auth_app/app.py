@@ -25,6 +25,9 @@ class GitHubApp:
     def _load_private_key(self) -> bytes:
         """Load and cache the private key."""
         if self._private_key is None:
+            if self.config.private_key_path is None:
+                raise ValueError("Private key path must be set in the configuration.")
+
             key_path = Path(self.config.private_key_path)
             if not key_path.exists():
                 raise FileNotFoundError(f"Private key not found at {key_path}")
