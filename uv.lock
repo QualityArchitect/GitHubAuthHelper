@@ -163,15 +163,14 @@ wheels = [
 ]
 
 [[package]]
-name = "github-auth"
+name = "github-auth-app"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "pyjwt" },
     { name = "python-dotenv" },
     { name = "requests" },
-    { name = "responses" },
 ]
 
 [package.dev-dependencies]
@@ -181,6 +180,7 @@ dev = [
     { name = "isort" },
     { name = "pytest" },
     { name = "pytest-coverage" },
+    { name = "responses" },
     { name = "ruff" },
 ]
 
@@ -190,7 +190,6 @@ requires-dist = [
     { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "requests", specifier = ">=2.32.4" },
-    { name = "responses", specifier = ">=0.25.7" },
 ]
 
 [package.metadata.requires-dev]
@@ -200,6 +199,7 @@ dev = [
     { name = "isort", specifier = ">=6.0.1" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-coverage", specifier = ">=0.0" },
+    { name = "responses", specifier = ">=0.25.7" },
     { name = "ruff", specifier = ">=0.12.4" },
 ]
 

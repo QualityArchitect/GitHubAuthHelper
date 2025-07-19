@@ -1,30 +1,30 @@
 FROM python:3.13-slim-bookworm AS builder
 
-# Install uv via pip (simpler and more reliable in Docker)
+# Install uv
 RUN pip install uv
 
 WORKDIR /app
 
-# Copy only the dependency files first
+# Copy project files
 COPY pyproject.toml .
+COPY src/ ./src/
 
 # Create a virtual environment and install dependencies
 RUN uv venv /opt/venv
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Install dependencies from pyproject.toml
+# Install the package
 RUN uv pip install .
 
 # Runtime stage
 FROM python:3.13-slim-bookworm
 
-# Install runtime dependencies and uv
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install uv
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
@@ -36,7 +36,7 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 WORKDIR /app
 
 # Copy application files
-COPY github_app_auth.py .
+COPY src/ ./src/
 COPY jenkins_github_app_auth.py .
 
 # Create non-root user

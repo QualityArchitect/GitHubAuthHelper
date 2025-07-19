@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import responses
 
-from github_app_auth import GitHubApp, GitHubAppJenkinsHelper
+from src.github_auth_app import GitHubApp, GitHubAppJenkinsHelper
 
 
 @pytest.mark.integration

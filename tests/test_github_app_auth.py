@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 import jwt
 import pytest
 
-from github_app_auth import GitHubApp
+from src.github_auth_app import GitHubApp
 from tests.fixtures.mock_responses import (
     CREATE_FILE_RESPONSE,
     INSTALLATIONS_RESPONSE,

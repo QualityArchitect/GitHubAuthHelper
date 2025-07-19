@@ -8,7 +8,7 @@ import argparse
 import json
 import sys
 
-from github_app_auth import GitHubApp
+from src.github_auth_app.app import GitHubApp
 
 
 def main():

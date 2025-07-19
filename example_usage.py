@@ -1,9 +1,9 @@
-from config import (
+from src.github_auth_app import GitHubApp, GitHubAppJenkinsHelper
+from src.github_auth_app.config import (
     GITHUB_APP_ID,
     GITHUB_APP_INSTALLATION_ID,
     GITHUB_APP_PRIVATE_KEY_PATH,
 )
-from github_app_auth import GitHubApp, GitHubAppJenkinsHelper
 
 
 def main():
