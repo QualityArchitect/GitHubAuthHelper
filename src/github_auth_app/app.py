@@ -1,226 +1,238 @@
+import logging
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional, cast
 
 import jwt
 import requests
-from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
+
+from .config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubApp:
-    """
-    A class to handle GitHub App authentication and API interactions
-    """
+    """Handles GitHub App authentication and token management."""
 
-    def __init__(
-        self, app_id: str, private_key_path: str, installation_id: Optional[str] = None
-    ):
-        """
-        Initialize GitHub App with credentials
-
-        Args:
-            app_id: GitHub App ID
-            private_key_path: Path to the private key .pem file
-            installation_id: Installation ID (optional, can be set later)
-        """
-        self.app_id = app_id
-        self.private_key_path = private_key_path
-        self.installation_id = installation_id
-        self.private_key = self._load_private_key()
-        self._installation_token = None
-        self._token_expires_at = None
+    def __init__(self, config: Config):
+        """Initialize GitHub App with configuration."""
+        self.config = config
+        self._private_key: Optional[bytes] = None
+        self._token_cache: Dict[str, Dict[str, Any]] = {}
 
     def _load_private_key(self) -> bytes:
-        """Load and return the private key from file"""
-        with open(self.private_key_path, "rb") as key_file:
-            private_key = serialization.load_pem_private_key(
-                key_file.read(), password=None, backend=default_backend()
-            )
-        return private_key
+        """Load and cache the private key."""
+        if self._private_key is None:
+            key_path = Path(self.config.private_key_path)
+            if not key_path.exists():
+                raise FileNotFoundError(f"Private key not found at {key_path}")
 
-    def generate_jwt(self) -> str:
-        """
-        Generate a JWT token for GitHub App authentication
+            with open(key_path, "rb") as key_file:
+                private_key = serialization.load_pem_private_key(
+                    key_file.read(), password=None
+                )
+                # Serialize the key back to PEM format bytes
+                self._private_key = private_key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.PKCS8,
+                    encryption_algorithm=serialization.NoEncryption(),
+                )
+        return self._private_key
 
-        Returns:
-            JWT token string
-        """
-        # JWT expiration time (10 minutes maximum for GitHub Apps)
+    def _create_jwt(self) -> str:
+        """Create a JWT for GitHub App authentication."""
+        private_key = self._load_private_key()
         now = int(time.time())
-        expiration = now + (10 * 60)  # 10 minutes
 
-        # Create JWT payload
-        payload = {"iat": now, "exp": expiration, "iss": self.app_id}
-
-        # Sign and encode the JWT
-        encoded_jwt = jwt.encode(payload, self.private_key, algorithm="RS256")
-
-        return encoded_jwt
-
-    def get_installations(self) -> Dict[str, Any]:
-        """
-        Get all installations for this GitHub App
-
-        Returns:
-            Dictionary containing installation data
-        """
-        jwt_token = self.generate_jwt()
-        headers = {
-            "Authorization": f"Bearer {jwt_token}",
-            "Accept": "application/vnd.github.v3+json",
+        payload = {
+            "iat": now,
+            "exp": now + 600,  # 10 minutes
+            "iss": self.config.app_id,
         }
 
-        response = requests.get(
-            "https://api.github.com/app/installations", headers=headers
-        )
-        response.raise_for_status()
-        return response.json()
+        return jwt.encode(payload, private_key, algorithm="RS256")
 
-    def get_installation_token(self, force_refresh: bool = False) -> str:
-        """
-        Get or refresh installation access token
+    def _make_github_request(
+        self,
+        method: str,
+        url: str,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Make a request to GitHub API with error handling."""
+        if headers is None:
+            headers = {}
 
-        Args:
-            force_refresh: Force token refresh even if current token is valid
-
-        Returns:
-            Installation access token
-        """
-        if not self.installation_id:
-            raise ValueError("Installation ID is required to get installation token")
-
-        # Check if we have a valid cached token
-        if not force_refresh and self._installation_token and self._token_expires_at:
-            # Use timezone-aware datetime for comparison
-            if datetime.now(timezone.utc) < self._token_expires_at:
-                return self._installation_token
-
-        # Generate new installation token
-        jwt_token = self.generate_jwt()
-        headers = {
-            "Authorization": f"Bearer {jwt_token}",
-            "Accept": "application/vnd.github.v3+json",
-        }
-
-        response = requests.post(
-            f"https://api.github.com/app/installations/{self.installation_id}/access_tokens",
-            headers=headers,
-        )
-        response.raise_for_status()
-
-        data = response.json()
-        self._installation_token = data["token"]
-
-        # Parse expiration time - handle both 'Z' suffix and '+00:00' offset
-        expires_at_str = data["expires_at"]
-        if expires_at_str.endswith("Z"):
-            expires_at_str = expires_at_str[:-1] + "+00:00"
-
-        # Parse as timezone-aware datetime
-        expires_at = datetime.fromisoformat(expires_at_str)
-
-        # Ensure it's UTC if no timezone info (shouldn't happen with GitHub API)
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-
-        # Set expiration 5 minutes earlier for safety
-        self._token_expires_at = expires_at - timedelta(minutes=5)
-
-        return self._installation_token
-
-    def make_api_request(
-        self, method: str, endpoint: str, **kwargs
-    ) -> requests.Response:
-        """
-        Make an authenticated API request to GitHub
-
-        Args:
-            method: HTTP method (GET, POST, PUT, DELETE, etc.)
-            endpoint: API endpoint (e.g., '/repos/owner/repo/contents/file.txt')
-            **kwargs: Additional arguments to pass to requests
-
-        Returns:
-            Response object
-        """
-        token = self.get_installation_token()
-
-        # Set default headers
-        headers = kwargs.get("headers", {})
         headers.update(
             {
-                "Authorization": f"token {token}",
                 "Accept": "application/vnd.github.v3+json",
+                "User-Agent": f"GitHubApp/{self.config.app_id}",
             }
         )
-        kwargs["headers"] = headers
 
-        # Make the request
-        url = f"https://api.github.com{endpoint}"
-        response = requests.request(method, url, **kwargs)
-
-        # Handle token expiration
-        if response.status_code == 401:
-            # Token might be expired, try refreshing
-            token = self.get_installation_token(force_refresh=True)
-            headers["Authorization"] = f"token {token}"
-            response = requests.request(method, url, **kwargs)
-
-        return response
-
-    def get_repository_content(
-        self, owner: str, repo: str, path: str = ""
-    ) -> Dict[str, Any]:
-        """
-        Get repository content at specified path
-
-        Args:
-            owner: Repository owner
-            repo: Repository name
-            path: Path to file or directory
-
-        Returns:
-            Repository content data
-        """
-        endpoint = f"/repos/{owner}/{repo}/contents/{path}"
-        response = self.make_api_request("GET", endpoint)
+        response = requests.request(method, url, headers=headers, **kwargs)
         response.raise_for_status()
-        return response.json()
+        return cast(Dict[str, Any], response.json())
 
-    def create_or_update_file(
+    def get_app_info(self) -> Dict[str, Any]:
+        """Get information about the GitHub App."""
+        jwt_token = self._create_jwt()
+        return self._make_github_request(
+            "GET",
+            "https://api.github.com/app",
+            headers={"Authorization": f"Bearer {jwt_token}"},
+        )
+
+    def get_installation_id(self, owner: str, repo: str) -> Optional[int]:
+        """Get installation ID for a specific repository."""
+        jwt_token = self._create_jwt()
+
+        try:
+            data = self._make_github_request(
+                "GET",
+                f"https://api.github.com/repos/{owner}/{repo}/installation",
+                headers={"Authorization": f"Bearer {jwt_token}"},
+            )
+            return int(data["id"])
+        except requests.HTTPError as e:
+            if e.response.status_code == 404:
+                logger.warning(f"No installation found for {owner}/{repo}")
+                return None
+            raise
+
+    def get_installation_token(
+        self, installation_id: int, permissions: Optional[Dict[str, str]] = None
+    ) -> str:
+        """Get an installation access token."""
+        cache_key = f"token_{installation_id}"
+
+        # Check cache
+        if cache_key in self._token_cache:
+            cached = self._token_cache[cache_key]
+            expires_at = cached.get("expires_at")
+            if expires_at and isinstance(expires_at, datetime):
+                if datetime.now(timezone.utc) < expires_at - timedelta(minutes=5):
+                    return str(cached["token"])
+
+        # Create new token
+        jwt_token = self._create_jwt()
+        url = (
+            f"https://api.github.com/app/installations/{installation_id}/access_tokens"
+        )
+
+        body: Dict[str, Any] = {}
+        if permissions:
+            body["permissions"] = permissions
+
+        data = self._make_github_request(
+            "POST",
+            url,
+            headers={"Authorization": f"Bearer {jwt_token}"},
+            json=body if body else None,
+        )
+
+        # Cache the token
+        expires_at_str = data.get("expires_at")
+        if expires_at_str:
+            expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+            self._token_cache[cache_key] = {
+                "token": data["token"],
+                "expires_at": expires_at,
+            }
+
+        return str(data["token"])
+
+    def get_repository_token(self, owner: str, repo: str) -> Optional[str]:
+        """Get an installation token for a specific repository."""
+        installation_id = self.get_installation_id(owner, repo)
+        if installation_id is None:
+            return None
+
+        return self.get_installation_token(installation_id)
+
+    def create_check_run(
         self,
         owner: str,
         repo: str,
-        path: str,
-        content: str,
-        message: str,
-        sha: Optional[str] = None,
+        name: str,
+        head_sha: str,
+        status: str = "queued",
+        **kwargs: Any,
     ) -> Dict[str, Any]:
-        """
-        Create or update a file in the repository
+        """Create a check run for a commit."""
+        token = self.get_repository_token(owner, repo)
+        if not token:
+            raise ValueError(f"No installation found for {owner}/{repo}")
 
-        Args:
-            owner: Repository owner
-            repo: Repository name
-            path: File path
-            content: File content (will be base64 encoded)
-            message: Commit message
-            sha: SHA of the file to update (required for updates)
-
-        Returns:
-            API response data
-        """
-        import base64
-
-        endpoint = f"/repos/{owner}/{repo}/contents/{path}"
-        data = {
-            "message": message,
-            "content": base64.b64encode(content.encode()).decode(),
+        url = f"https://api.github.com/repos/{owner}/{repo}/check-runs"
+        body = {
+            "name": name,
+            "head_sha": head_sha,
+            "status": status,
+            **kwargs,
         }
 
-        if sha:
-            data["sha"] = sha
+        return self._make_github_request(
+            "POST", url, headers={"Authorization": f"token {token}"}, json=body
+        )
 
-        response = self.make_api_request("PUT", endpoint, json=data)
-        response.raise_for_status()
-        return response.json()
+    def update_check_run(
+        self, owner: str, repo: str, check_run_id: int, **kwargs: Any
+    ) -> Dict[str, Any]:
+        """Update an existing check run."""
+        token = self.get_repository_token(owner, repo)
+        if not token:
+            raise ValueError(f"No installation found for {owner}/{repo}")
+
+        url = f"https://api.github.com/repos/{owner}/{repo}/check-runs/{check_run_id}"
+
+        return self._make_github_request(
+            "PATCH", url, headers={"Authorization": f"token {token}"}, json=kwargs
+        )
+
+    def create_deployment(
+        self,
+        owner: str,
+        repo: str,
+        ref: str,
+        environment: str = "production",
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Create a deployment."""
+        token = self.get_repository_token(owner, repo)
+        if not token:
+            raise ValueError(f"No installation found for {owner}/{repo}")
+
+        url = f"https://api.github.com/repos/{owner}/{repo}/deployments"
+        body = {
+            "ref": ref,
+            "environment": environment,
+            "auto_merge": False,
+            **kwargs,
+        }
+
+        return self._make_github_request(
+            "POST", url, headers={"Authorization": f"token {token}"}, json=body
+        )
+
+    def create_deployment_status(
+        self,
+        owner: str,
+        repo: str,
+        deployment_id: int,
+        state: str,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Create a deployment status."""
+        token = self.get_repository_token(owner, repo)
+        if not token:
+            raise ValueError(f"No installation found for {owner}/{repo}")
+
+        url = f"https://api.github.com/repos/{owner}/{repo}/deployments/{deployment_id}/statuses"
+        body = {"state": state, **kwargs}
+
+        return self._make_github_request(
+            "POST", url, headers={"Authorization": f"token {token}"}, json=body
+        )
