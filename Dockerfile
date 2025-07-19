@@ -6,7 +6,8 @@ RUN pip install uv
 WORKDIR /app
 
 # Copy project files
-COPY pyproject.toml .
+COPY ["pyproject.toml", "README.md", "./"]
+COPY README.md .
 COPY src/ ./src/
 
 # Create a virtual environment and install dependencies

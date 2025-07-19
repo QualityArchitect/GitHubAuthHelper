@@ -8,6 +8,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from src.github_auth_app.config import Config
+
 
 @pytest.fixture
 def mock_private_key():
@@ -39,11 +41,11 @@ def private_key_file(mock_private_key):
 @pytest.fixture
 def github_app_config(private_key_file):
     """Basic GitHub App configuration"""
-    return {
-        "app_id": "123456",
-        "private_key_path": private_key_file,
-        "installation_id": "789012",
-    }
+    return Config(
+        app_id="123456",
+        private_key_path=private_key_file,
+        installation_id="789012",
+    )
 
 
 @pytest.fixture
@@ -57,7 +59,7 @@ def mock_time():
 @pytest.fixture
 def mock_requests():
     """Mock requests library"""
-    with patch("github_app_auth.requests") as mock:
+    with patch("src.github_auth_app.app.requests") as mock:
         yield mock
 
 

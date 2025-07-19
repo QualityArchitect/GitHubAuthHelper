@@ -1,4 +1,4 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Script to be used in Jenkins to get GitHub App authentication
 Can be used in Jenkins Pipeline or as a credential provider
@@ -7,8 +7,10 @@ Can be used in Jenkins Pipeline or as a credential provider
 import argparse
 import json
 import sys
+from typing import Optional
 
 from src.github_auth_app.app import GitHubApp
+from src.github_auth_app.config import Config
 
 
 def main():
@@ -26,15 +28,27 @@ def main():
     args = parser.parse_args()
 
     try:
-        # Initialize GitHub App
-        app = GitHubApp(
+        # Create configuration
+        config = Config(
             app_id=args.app_id,
             private_key_path=args.private_key_path,
             installation_id=args.installation_id,
         )
 
+        # Initialize GitHub App
+        app = GitHubApp(config)
+
         # Get token
-        token = app.get_installation_token()
+        token = app.get_installation_token(int(args.installation_id))
+
+        # Get expiration from cache if available
+        expires_at: Optional[str] = None
+        cache_key = f"token_{args.installation_id}"
+        if cache_key in app._token_cache:
+            cached = app._token_cache[cache_key]
+            expires_datetime = cached.get("expires_at")
+            if expires_datetime:
+                expires_at = expires_datetime.isoformat()
 
         # Output in requested format
         if args.output_format == "token":
@@ -44,11 +58,7 @@ def main():
                 json.dumps(
                     {
                         "token": token,
-                        "expires_at": (
-                            app._token_expires_at.isoformat()
-                            if app._token_expires_at
-                            else None
-                        ),
+                        "expires_at": expires_at,
                     }
                 )
             )
