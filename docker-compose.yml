@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  github-app-auth:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID}
+    volumes:
+      - ./private-key.pem:/app/private-key.pem:ro
+      - ./.env:/app/.env:ro
+    command: --help
+
+  # Development container with hot reload
+  dev:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    environment:
+      - GITHUB_APP_ID=${GITHUB_APP_ID}
+      - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID}
+    volumes:
+      - .:/app
+      - ./private-key.pem:/app/private-key.pem:ro
+    command: python -m pytest --watch

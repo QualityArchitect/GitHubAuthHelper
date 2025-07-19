@@ -1,0 +1,32 @@
+[project]
+name = "github-auth"
+version = "0.1.0"
+description = ""
+requires-python = ">=3.13"
+dependencies = [
+    "cryptography>=45.0.5",
+    "pyjwt>=2.10.1",
+    "python-dotenv>=1.1.1",
+    "requests>=2.32.4",
+]
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "coverage>=7.9.2",
+    "isort>=6.0.1",
+    "pytest>=8.4.1",
+    "pytest-coverage>=0.0",
+    "ruff>=0.12.4",
+    "responses>=0.25.7",
+]
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
