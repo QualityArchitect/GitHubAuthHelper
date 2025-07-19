@@ -3,8 +3,8 @@ from unittest.mock import Mock, patch
 import jwt
 import pytest
 
-from src.github_auth_app.app import GitHubApp
-from src.github_auth_app.config import Config
+from github_auth_app.app import GitHubApp
+from github_auth_app.config import Config
 from tests.fixtures.mock_responses import (
     INSTALLATION_REPOS_RESPONSE,
 )

@@ -42,6 +42,7 @@ jobs:
     - name: Test
       run: |
         source .venv/bin/activate
+        export PYTHONPATH=.
         pytest tests/ --cov=src/github_auth_app --cov-report=xml
 
     - name: Build Docker image

@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import responses
 
-from src.github_auth_app.app import GitHubApp
-from src.github_auth_app.config import Config
-from src.github_auth_app.jenkins_helper import GitHubAppJenkinsHelper
+from github_auth_app.app import GitHubApp
+from github_auth_app.config import Config
+from github_auth_app.jenkins_helper import GitHubAppJenkinsHelper
 
 
 @pytest.mark.integration

@@ -3,8 +3,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.github_auth_app.app import GitHubApp
-from src.github_auth_app.jenkins_helper import GitHubAppJenkinsHelper
+from github_auth_app.app import GitHubApp
+from github_auth_app.jenkins_helper import GitHubAppJenkinsHelper
 
 
 class TestGitHubAppJenkinsHelper:
