@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
     paths-ignore:
@@ -39,4 +40,18 @@ jobs:
     - name: Test
       run: |
         docker run --rm -v ${{ github.workspace }}:/app -w /app github-app-auth:dev \
-          bash -c "export PYTHONPATH=. && pytest tests/ --cov=src/github_auth_app --cov-report=xml"
+        bash -c "export PYTHONPATH=. && pytest tests/ --cov=src/github_auth_app --cov-report=xml --junitxml=pytest-results.xml"
+
+    - name: Upload coverage report
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-coverage
+        path: coverage.xml
+
+    - name: Upload JUnit test results
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: junit-results
+        path: pytest-results.xml
