@@ -10,23 +10,9 @@ pipeline {
     }
 
     stages {
-        stage('Clone GitHub Auth Tool') {
-            steps {
-                sh '''
-                    # Clone the public repo - no auth needed!
-                    if [ ! -d "GitHubAuthHelper" ]; then
-                        git clone https://github.com/QualityArchitect/GitHubAuthHelper.git
-                    else
-                        cd GitHubAuthHelper && git pull && cd ..
-                    fi
-                '''
-            }
-        }
-
         stage('Build Docker Image') {
             steps {
                 sh '''
-                    cd GitHubAuthHelper
                     docker build -f Dockerfile -t github-auth-helper:latest .
                 '''
             }
