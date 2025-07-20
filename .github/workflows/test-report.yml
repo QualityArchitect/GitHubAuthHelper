@@ -16,7 +16,7 @@ jobs:
         with:
           artifact: test-results
           name: Pytest Results
-          path: 'coverage.xml'
+          path: 'pytest-results.xml'
           reporter: java-junit
           use-actions-summary: 'true'
           fail-on-error: 'true'
