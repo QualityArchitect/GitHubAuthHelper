@@ -1,3 +1,5 @@
+[![Test Report](https://github.com/QualityArchitect/GitHubAuthHelper/actions/workflows/test-report.yml/badge.svg)](https://github.com/QualityArchitect/GitHubAuthHelper/actions/workflows/test-report.yml)
+
 # GitHub App Authentication
 
 A Python library for GitHub App authentication, designed for Jenkins and other CI/CD systems.
