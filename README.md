@@ -1,3 +1,4 @@
+[![CI](https://github.com/QualityArchitect/GitHubAuthHelper/actions/workflows/ci.yml/badge.svg)](https://github.com/QualityArchitect/GitHubAuthHelper/actions/workflows/ci.yml)
 [![Test Report](https://github.com/QualityArchitect/GitHubAuthHelper/actions/workflows/test-report.yml/badge.svg)](https://github.com/QualityArchitect/GitHubAuthHelper/actions/workflows/test-report.yml)
 
 # GitHub App Authentication
