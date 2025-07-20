@@ -1,0 +1,144 @@
+pipeline {
+    agent any
+
+    environment {
+        GITHUB_APP_ID = credentials('github-app-id')
+        GITHUB_APP_PRIVATE_KEY_PATH = credentials('qa-github-app-private-key-text')
+        GITHUB_APP_INSTALLATION_ID = credentials('github-installation-id')
+        CREDENTIAL_ID = 'github-app-token' // ID for the token credential
+        CUSTOM_JENKINS_URL = "${JENKINS_URL}"
+    }
+
+    stages {
+        stage('Clone GitHub Auth Tool') {
+            steps {
+                sh '''
+                    # Clone the public repo - no auth needed!
+                    if [ ! -d "GitHubAuthHelper" ]; then
+                        git clone https://github.com/QualityArchitect/GitHubAuthHelper.git
+                    else
+                        cd GitHubAuthHelper && git pull && cd ..
+                    fi
+                '''
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                    cd GitHubAuthHelper
+                    docker build -f Dockerfile -t github-auth-helper:latest .
+                '''
+            }
+        }
+
+        stage('Get and Store GitHub Token') {
+            steps {
+                script {
+                    // Read the private key content
+                    def privateKeyContent = readFile(GITHUB_APP_PRIVATE_KEY_PATH)
+
+                    // Write the key file locally
+                    writeFile file: 'temp-private-key.pem', text: privateKeyContent
+
+                    try {
+                        sh '''
+                            # Create a container with overridden entrypoint
+                            docker create --name github-auth-temp --entrypoint /bin/sh github-auth-helper:latest -c "sleep 300"
+
+                            # Copy the key file into the container
+                            docker cp temp-private-key.pem github-auth-temp:/tmp/private-key.pem
+
+                            # Start the container
+                            docker start github-auth-temp
+
+                            echo "Executing GitHub App authentication..."
+
+                            # Execute the command and redirect output to file (no console output)
+                            docker exec github-auth-temp python /app/jenkins_github_app_auth.py \
+                                --app-id "$GITHUB_APP_ID" \
+                                --private-key-path /tmp/private-key.pem \
+                                --installation-id "$GITHUB_APP_INSTALLATION_ID" \
+                                --output-format json > token.json 2>/dev/null
+
+                            echo "Token generation completed successfully"
+
+                            # Stop and remove the container
+                            docker stop github-auth-temp
+                            docker rm github-auth-temp
+                        '''
+
+                        def tokenJson = readFile('token.json').trim()
+                        def tokenData = readJSON text: tokenJson
+
+                        echo "Token obtained successfully!"
+                        echo "Token expires at: ${tokenData.expires_at}"
+
+                        // Use withCredentials to securely handle Jenkins API credentials
+                        withCredentials([
+                            usernamePassword(credentialsId: 'jenkins-api-credentials',
+                                           usernameVariable: 'JENKINS_USER',
+                                           passwordVariable: 'JENKINS_API_TOKEN')
+                        ]) {
+                            // First, try to delete existing credential
+                            sh '''
+                                echo "Attempting to delete existing credential..."
+                                curl -s -X POST "${CUSTOM_JENKINS_URL}/credentials/store/system/domain/_/credential/${CREDENTIAL_ID}/doDelete" \
+                                    --user "${JENKINS_USER}:${JENKINS_API_TOKEN}" \
+                                    --header "Content-Type: application/x-www-form-urlencoded" \
+                                    --data "" > /dev/null 2>&1 || echo "Credential might not exist, continuing..."
+                            '''
+
+                            // Create the credential JSON payload
+                            def credentialPayload = [
+                                "": "0",
+                                "credentials": [
+                                    "scope": "GLOBAL",
+                                    "id": env.CREDENTIAL_ID,
+                                    "description": "GitHub App Token (expires: ${tokenData.expires_at})",
+                                    "secret": tokenData.token,
+                                    "\$class": "org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl"
+                                ]
+                            ]
+
+                            // Write JSON to file
+                            writeJSON file: 'credential.json', json: credentialPayload
+
+                            // Create new credential via REST API
+                            sh '''
+                                echo "Creating new credential..."
+                                curl -s -X POST "${CUSTOM_JENKINS_URL}/credentials/store/system/domain/_/createCredentials" \
+                                    --user "${JENKINS_USER}:${JENKINS_API_TOKEN}" \
+                                    --header "Content-Type: application/x-www-form-urlencoded" \
+                                    --data-urlencode "json@credential.json" > /dev/null 2>&1
+
+                                rm -f credential.json
+                            '''
+                        }
+
+                        echo "Token stored successfully as credential ID: ${env.CREDENTIAL_ID}"
+
+                    } finally {
+                        sh '''
+                            docker stop github-auth-temp 2>/dev/null || true
+                            docker rm github-auth-temp 2>/dev/null || true
+                            rm -f temp-private-key.pem token.json credential.json
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Clean up
+            sh '''
+                docker rmi github-auth-helper:latest || true
+                docker stop github-auth-temp 2>/dev/null || true
+                docker rm github-auth-temp 2>/dev/null || true
+                rm -f temp-private-key.pem token.json credential.json update-credential.groovy
+            '''
+        }
+    }
+}

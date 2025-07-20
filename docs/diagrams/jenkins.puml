@@ -1,0 +1,201 @@
+@startuml Jenkins GitHub App Authentication Flow
+
+!theme plain
+skinparam backgroundColor white
+skinparam componentStyle rectangle
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 60
+
+title Jenkins GitHub App Authentication Flow (Updated)
+
+actor Developer as dev
+participant "Jenkins Pipeline" as jenkins
+participant "Docker Engine" as docker
+participant "GitHub Auth Container" as container
+participant "GitHub API" as github
+participant "Jenkins Credentials Store" as creds
+database "GitHub App" as app
+
+== Pipeline Initialization ==
+dev -> jenkins: Trigger Pipeline
+note right of jenkins
+  Environment Variables:
+  - GITHUB_APP_ID
+  - GITHUB_APP_PRIVATE_KEY_PATH
+  - GITHUB_APP_INSTALLATION_ID
+  - CUSTOM_JENKINS_URL = ${JENKINS_URL}
+end note
+
+== Stage 1: Clone GitHub Auth Tool ==
+jenkins -> jenkins: Check if GitHubAuthHelper exists
+alt Repository not cloned
+    jenkins -> github: git clone GitHubAuthHelper repo
+    github --> jenkins: Repository files
+else Repository exists
+    jenkins -> github: git pull (update)
+    github --> jenkins: Updated files
+end
+
+== Stage 2: Build Docker Image ==
+jenkins -> docker: docker build -f Dockerfile -t github-auth-helper:latest
+docker -> docker: Build image with Python dependencies
+note right of docker
+  Dockerfile stages:
+  1. Builder: Install uv, copy files, create venv
+  2. Runtime: Copy venv, set up non-root user
+  Entry point: jenkins_github_app_auth.py
+end note
+docker --> jenkins: Image built successfully
+
+== Stage 3: Get and Store GitHub Token ==
+jenkins -> jenkins: Read private key from credentials
+jenkins -> jenkins: Write temp-private-key.pem
+
+jenkins -> docker: docker create github-auth-temp container
+jenkins -> docker: docker cp temp-private-key.pem to container
+jenkins -> docker: docker start github-auth-temp
+
+jenkins -> container: Execute Python script (output to file)
+activate container
+
+container -> container: Load private key from /tmp/private-key.pem
+container -> container: Create JWT token
+note right of container
+  JWT Payload:
+  - iss: GITHUB_APP_ID
+  - iat: current time
+  - exp: current time + 600s
+  Algorithm: RS256
+end note
+
+container -> github: POST /app/installations/{id}/access_tokens
+note right of container
+  Headers:
+  - Authorization: Bearer {jwt_token}
+  - Accept: application/vnd.github.v3+json
+end note
+
+github -> app: Validate JWT signature
+app -> github: Verify app permissions
+github --> container: Installation token response
+note left of github
+  Response:
+  {
+    "token": "ghs_...",
+    "expires_at": "2025-07-20T10:00:00Z"
+  }
+end note
+
+container -> container: Format output as JSON
+container --> jenkins: Token JSON to file (no console output)
+note right of container
+  Output redirected to token.json
+  No token visible in console logs
+end note
+deactivate container
+
+jenkins -> docker: docker stop & remove container
+jenkins -> jenkins: Parse JSON from file
+note right of jenkins
+  NO environment variables set
+  Token kept in local variable only
+  Security: No env.GITHUB_APP_TOKEN
+end note
+
+== Secure Credential Storage ==
+jenkins -> jenkins: withCredentials for Jenkins API auth
+note right of jenkins
+  Secure handling of Jenkins credentials:
+  - JENKINS_USER (masked)
+  - JENKINS_API_TOKEN (masked)
+end note
+
+jenkins -> creds: Try to delete existing credential (silent)
+note right of jenkins
+  REST API Call (silent):
+  POST /credentials/.../doDelete
+  Flags: -s, > /dev/null 2>&1
+end note
+
+jenkins -> jenkins: Create credential JSON payload
+note right of jenkins
+  Payload structure:
+  {
+    "credentials": {
+      "scope": "GLOBAL",
+      "id": "github-app-token",
+      "description": "GitHub App Token (expires: ...)",
+      "secret": "{token}",
+      "$class": "StringCredentialsImpl"
+    }
+  }
+end note
+
+jenkins -> creds: POST /createCredentials (silent)
+note right of jenkins
+  Security improvements:
+  - Silent curl (-s flag)
+  - Output to /dev/null
+  - withCredentials wrapper
+  - No credential exposure in logs
+end note
+creds --> jenkins: Credential stored successfully
+
+== Cleanup ==
+jenkins -> docker: Remove docker image
+jenkins -> jenkins: Remove temporary files
+note right of jenkins
+  Cleanup files:
+  - temp-private-key.pem
+  - token.json
+  - credential.json
+  All cleaned in finally block
+end note
+
+== Token Usage (Subsequent Pipelines) ==
+jenkins -> creds: withCredentials('github-app-token')
+note right of jenkins
+  Secure token usage:
+  withCredentials([string(
+    credentialsId: 'github-app-token',
+    variable: 'GITHUB_TOKEN'
+  )])
+end note
+creds --> jenkins: GitHub App token (masked)
+jenkins -> github: Git operations with masked token
+note right of jenkins
+  Git operations:
+  - Clone repositories
+  - Push commits
+  - Create releases
+  Token automatically masked in logs
+end note
+
+== Error Handling ==
+note over jenkins, docker
+  Error scenarios handled:
+  1. Docker build failures
+  2. GitHub API rate limits
+  3. Invalid JWT signatures
+  4. Missing permissions
+  5. Network connectivity issues
+  6. Credential storage failures
+  7. Silent failure handling
+end note
+
+== Security Features (Enhanced) ==
+note over jenkins, github
+  Security measures:
+  1. Private key stored as Jenkins secret
+  2. Temporary files cleaned up
+  3. Tokens have limited lifetime (1 hour)
+  4. Non-root container execution
+  5. Minimal container permissions
+  6. JWT tokens expire in 10 minutes
+  7. Silent curl operations
+  8. No environment variable exposure
+  9. withCredentials masking
+  10. Output redirection to files
+end note
+
+@enduml
