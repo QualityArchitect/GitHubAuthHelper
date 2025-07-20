@@ -116,13 +116,16 @@ class TestGitHubApp:
         """Test handling when no installation is found"""
         app = GitHubApp(github_app_config)
 
-        # Mock 404 response
+        # Create a proper HTTPError exception with a mock response
         mock_response = Mock()
         mock_response.status_code = 404
-        mock_error = Mock()
-        mock_error.response = mock_response
-        mock_requests.request.side_effect = mock_error
-        mock_requests.HTTPError = type(mock_error)
+
+        # Create the HTTPError exception properly
+        http_error = mock_requests.exceptions.HTTPError("404 Client Error")
+        http_error.response = mock_response
+
+        # Configure the mock to raise the exception
+        mock_requests.request.side_effect = http_error
 
         installation_id = app.get_installation_id("test-org", "test-repo")
         assert installation_id is None

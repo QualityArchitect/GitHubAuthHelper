@@ -135,7 +135,7 @@ class TestJenkinsCLI:
         expected = "git clone https://x-access-token:test_cli_token_123@github.com/test-org/test-repo.git"
         assert captured.out.strip() == expected
 
-    def test_cli_no_token_error(self, mock_config, mock_github_app_class, capsys):
+    def test_cli_no_token_error(self, mock_config, mock_github_app_class, caplog):
         """Test CLI error when no token is available."""
         # Set up mock
         app_instance = Mock()
@@ -156,8 +156,7 @@ class TestJenkinsCLI:
 
             assert exc_info.value.code == 1
 
-        captured = capsys.readouterr()
-        assert "No installation found" in captured.err
+        assert "No installation found" in caplog.text
 
     def test_cli_missing_args(self, capsys):
         """Test CLI with missing required arguments."""

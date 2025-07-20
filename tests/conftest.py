@@ -52,21 +52,22 @@ def github_app_config(private_key_file):
 def mock_time():
     """Mock time for consistent testing"""
     with patch("time.time") as mock:
-        mock.return_value = 1234567890  # Fixed timestamp
+        mock.return_value = 1234567890
         yield mock
 
 
 @pytest.fixture
 def mock_requests():
     """Mock requests library"""
-    with patch("src.github_auth_app.app.requests") as mock:
+    with patch("github_auth_app.app.requests") as mock:
+        mock.exceptions.HTTPError = type("HTTPError", (Exception,), {})
+        mock.HTTPError = mock.exceptions.HTTPError
         yield mock
 
 
 @pytest.fixture
 def valid_installation_token():
     """Generate a valid installation token response"""
-    # Use timezone-aware datetime
     expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
     return {
         "token": "ghs_test_installation_token_123456789",
