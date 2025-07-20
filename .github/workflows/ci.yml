@@ -13,37 +13,20 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.13'
-
-    - name: Install uv
-      run: pip install uv
-
-    - name: Install dependencies
-      run: |
-        uv venv
-        source .venv/bin/activate
-        uv pip install -e ".[dev]"
+    - name: Build dev Docker image
+      run: docker build -f dev.Dockerfile -t github-app-auth:dev .
 
     - name: Lint
       run: |
-        source .venv/bin/activate
-        black --check src/
-        isort --check-only src/
-        ruff check src/
+        docker run --rm -v ${{ github.workspace }}:/app -w /app github-app-auth:dev \
+          bash -c "black --check src/ && isort --check-only src/ && ruff check src/"
 
     - name: Type check
       run: |
-        source .venv/bin/activate
-        mypy src/
+        docker run --rm -v ${{ github.workspace }}:/app -w /app github-app-auth:dev \
+          bash -c "mypy src/"
 
     - name: Test
       run: |
-        source .venv/bin/activate
-        export PYTHONPATH=.
-        pytest tests/ --cov=src/github_auth_app --cov-report=xml
-
-    - name: Build Docker image
-      run: docker build -t github-app-auth:test .
+        docker run --rm -v ${{ github.workspace }}:/app -w /app github-app-auth:dev \
+          bash -c "export PYTHONPATH=. && pytest tests/ --cov=src/github_auth_app --cov-report=xml"
